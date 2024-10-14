@@ -4,7 +4,6 @@ from werkzeug.utils import secure_filename
 from loguru import logger
 import easyocr
 import cv2
-import numpy as np
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 UPLOAD_FOLDER = './uploads'
