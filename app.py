@@ -4,6 +4,7 @@ from werkzeug.utils import secure_filename
 from loguru import logger
 import easyocr
 import cv2
+import requests
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 UPLOAD_FOLDER = './uploads'
@@ -21,10 +22,17 @@ def draw_boxes(image_path, results):
     for result in results:
         top_left = tuple(result[0][0])
         bottom_right = tuple(result[0][2])
-        cv2.rectangle(image, top_left, bottom_right, (0, 255, 0), 2)  
+        cv2.rectangle(image, top_left, bottom_right, (0, 255, 0), 2)
         text = result[1]
-        cv2.putText(image, text, top_left, cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2, cv2.LINE_AA)  # Escreve o texto
-    output_path = image_path.replace("uploads", "outputs")
+        cv2.putText(image, text, top_left, cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2, cv2.LINE_AA)
+    
+    # Cria a pasta de saída, se não existir
+    output_folder = './outputs'
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    # Define o caminho de saída para a imagem
+    output_path = os.path.join(output_folder, os.path.basename(image_path))
     cv2.imwrite(output_path, image)
     return output_path
 
@@ -33,7 +41,7 @@ class PlateDataAnalysis:
     def __init__(self):
         self.reader = easyocr.Reader(['pt', 'en'])
 
-    def read_text_from_image(self, image_path, decoder):
+    def read_text_from_image(self, image_path, decoder='beamsearch'):
         results = self.reader.readtext(image_path, decoder=decoder)
         return results
 
@@ -49,6 +57,19 @@ class PlateDataAnalysis:
                 })
         return potential_plates if potential_plates else None
 
+# Função para verificar a placa em outra API
+def check_plate_in_database(plate):
+    try:
+        # Faz uma requisição GET para verificar se a placa está cadastrada
+        response = requests.get(f'http://localhost:3333/search-plate?plate={plate}')
+        print(f'http://localhost:3333/search-plate?plate={plate}')
+        data = response.json()
+        
+        # Retorna True se a placa estiver cadastrada, baseado na mensagem da API
+        return data.get('message') == 'Placa cadastrada'
+    except requests.RequestException as e:
+        logger.error(f'Erro ao verificar placa: {e}')
+        return False
 
 @app.route('/upload', methods=['POST'])
 def upload_image():
@@ -71,13 +92,24 @@ def upload_image():
         texts = plate_analysis.read_text_from_image(file_path, 'beamsearch')
         text_plate = plate_analysis.filter_plates(texts)
 
+        # Verificar se as placas estão cadastradas na API
+        plate_verifications = []
+        if text_plate:
+            for plate in text_plate:
+                verification_result = check_plate_in_database(plate['text'])
+                plate_verifications.append({
+                    'plate': plate['text'],
+                    'confidence': plate['confidence'],
+                    'verification': verification_result
+                })
+
         # Desenhar caixas nas letras detectadas
         output_image_path = draw_boxes(file_path, texts)
 
         response = {
-            'image_url': url_for('uploaded_file', filename=output_image_path.split('/')[-1], _external=True),
+            'image_url': url_for('output_file', filename=output_image_path.split('/')[-1], _external=True),
             'detected_texts': [{'text': item[1], 'confidence': item[2]} for item in texts],
-            'plates': text_plate if text_plate else 'No potential plates found'
+            'plates': plate_verifications if plate_verifications else 'No potential plates found'
         }
 
         return jsonify(response), 200
