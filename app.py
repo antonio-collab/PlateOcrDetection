@@ -131,4 +131,4 @@ if __name__ == '__main__':
         os.makedirs(UPLOAD_FOLDER)
     if not os.path.exists('./outputs'):
         os.makedirs('./outputs')
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)
