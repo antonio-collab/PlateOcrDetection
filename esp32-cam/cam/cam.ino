@@ -4,11 +4,11 @@
 #include "esp_camera.h"
 
 // Configurações da rede Wi-Fi
-const char* ssid = "NAYANA";          
-const char* password = "nayana1711";    
+const char* ssid = "IFMA_VISITANTE";          
+const char* password = "visitante@ifma";    
 
 // URL do servidor local
-const char* serverUrl = "http://192.168.1.130:5000/upload"; 
+const char* serverUrl = " http://127.0.0.1:5000/upload"; 
 
 #define CAMERA_MODEL_AI_THINKER
 
