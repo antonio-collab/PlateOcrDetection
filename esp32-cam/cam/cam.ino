@@ -4,15 +4,16 @@
 #include "esp_camera.h"
 
 // Configurações da rede Wi-Fi
-const char* ssid = "IFMA_VISITANTE";          
-const char* password = "visitante@ifma";    
+const char* ssid = "Bolsolula";          
+const char* password = "verde3522";    
 
 // URL do servidor local
-const char* serverUrl = " http://127.0.0.1:5000/upload"; 
+const char* serverUrl = "http://192.168.0.108:5000/upload"; 
 
 #define CAMERA_MODEL_AI_THINKER
 
 // Definições dos pinos da câmera AI Thinker
+//Definição dos pinos
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
 #define XCLK_GPIO_NUM      0
@@ -29,6 +30,7 @@ const char* serverUrl = " http://127.0.0.1:5000/upload";
 #define VSYNC_GPIO_NUM    25
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
+#define flash 4
 
 void setup() {
   Serial.begin(115200);
@@ -43,7 +45,7 @@ void setup() {
   Serial.println("\nConectado ao Wi-Fi!");
   
   // Inicializa a câmera
-  camera_config_t config;
+   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
   config.pin_d0 = Y2_GPIO_NUM;
@@ -58,27 +60,35 @@ void setup() {
   config.pin_pclk = PCLK_GPIO_NUM;
   config.pin_vsync = VSYNC_GPIO_NUM;
   config.pin_href = HREF_GPIO_NUM;
-  config.pin_sccb_sda = SIOD_GPIO_NUM;
-  config.pin_sccb_scl = SIOC_GPIO_NUM;
+  config.pin_sscb_sda = SIOD_GPIO_NUM;
+  config.pin_sscb_scl = SIOC_GPIO_NUM;
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = FRAMESIZE_VGA;
-  config.jpeg_quality = 12;
-  config.fb_count = 2;
+  config.frame_size = FRAMESIZE_VGA;  
+  config.jpeg_quality = 4;
+  config.fb_count = 1;
 
+  
   esp_err_t err = esp_camera_init(&config);
+
   if (err != ESP_OK) {
-    Serial.printf("Erro ao iniciar a câmera: 0x%x", err);
-    return;
+     
+    Serial.printf("O início da câmera falhou com erro 0x%x", err);//Informa erro se a câmera não for iniciada corretamente
+    delay(1000);
+    ESP.restart();//Reinicia o ESP
+     
   }
 }
+
 void loop() {
   // Captura uma imagem
   camera_fb_t *fb = esp_camera_fb_get();
-  if (!fb) {
-    Serial.println("Falha ao capturar imagem");
+  if(fb){
+    Serial.println("Foto capturada");
+  } else {
+    Serial.println("Erro ao capturar imagem");
     delay(1000);
     return;
   }
@@ -86,7 +96,7 @@ void loop() {
   // Monta a requisição multipart/form-data
   if (WiFi.status() == WL_CONNECTED) {
     WiFiClient client;
-    if (client.connect("192.168.1.130", 5000)) {
+    if (client.connect("192.168.0.108", 5000)) {
       String boundary = "----ESP32Boundary";
       String contentType = "multipart/form-data; boundary=" + boundary;
       String formDataStart = "--" + boundary + "\r\n" +
