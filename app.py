@@ -2,9 +2,9 @@ from flask import Flask, jsonify, request, url_for, send_from_directory
 import os
 from werkzeug.utils import secure_filename
 from loguru import logger
-import easyocr
 import cv2
 import requests
+import easyocr
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 UPLOAD_FOLDER = './uploads'
@@ -19,13 +19,23 @@ def allowed_file(filename):
 # Função para desenhar as caixas delimitadoras na imagem
 def draw_boxes(image_path, results):
     image = cv2.imread(image_path)
+
+    if image is None:
+        logger.error(f'Erro ao carregar a imagem: {image_path}')
+        return None
+
     for result in results:
-        top_left = tuple(result[0][0])
-        bottom_right = tuple(result[0][2])
-        cv2.rectangle(image, top_left, bottom_right, (0, 255, 0), 2)
-        text = result[1]
-        cv2.putText(image, text, top_left, cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2, cv2.LINE_AA)
-    
+        try:
+            # Verifica se o resultado possui ao menos 4 coordenadas
+            if len(result[0]) >= 4:
+                top_left = tuple(map(int, result[0][0]))
+                bottom_right = tuple(map(int, result[0][2]))
+                cv2.rectangle(image, top_left, bottom_right, (0, 255, 0), 2)
+                text = result[1]
+                cv2.putText(image, text, top_left, cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2, cv2.LINE_AA)
+        except (IndexError, ValueError) as e:
+            logger.error(f'Erro ao processar coordenadas: {e}')
+
     # Cria a pasta de saída, se não existir
     output_folder = './outputs'
     if not os.path.exists(output_folder):
@@ -43,13 +53,14 @@ class PlateDataAnalysis:
 
     def read_text_from_image(self, image_path, decoder='beamsearch'):
         results = self.reader.readtext(image_path, decoder=decoder)
+        logger.info(f'OCR results: {results}')
         return results
 
     def filter_plates(self, results):
         potential_plates = []
         for result in results:
             text, confidence = result[1], result[2]
-            logger.info(f'extracted text: {text} precision {confidence}')
+            logger.info(f'Extracted text: {text} | Confidence: {confidence}')
             if confidence > 0.3 and len(text) >= 7:
                 potential_plates.append({
                     'text': text,
@@ -57,15 +68,12 @@ class PlateDataAnalysis:
                 })
         return potential_plates if potential_plates else None
 
-# Função para verificar a placa em outra API
+# Função para verificar a placa no Adonis js
 def check_plate_in_database(plate):
     try:
-        # Faz uma requisição GET para verificar se a placa está cadastrada
-        response = requests.get(f'http://localhost:3333/search-plate?plate={plate}')
-        print(f'http://localhost:3333/search-plate?plate={plate}')
+        response = requests.get(f'http://localhost:3555/search-plate?plate={plate}')
         data = response.json()
-        
-        # Retorna True se a placa estiver cadastrada, baseado na mensagem da API
+        logger.info(f'Entrou na verificação de placas')
         return data.get('message') == 'Placa cadastrada'
     except requests.RequestException as e:
         logger.error(f'Erro ao verificar placa: {e}')
@@ -87,7 +95,7 @@ def upload_image():
         file.save(file_path)
         logger.info(f'Image saved at {file_path}')
 
-        # Processar a imagem e realizar OCR
+        # Processar a imagem e realiza OCR
         plate_analysis = PlateDataAnalysis()
         texts = plate_analysis.read_text_from_image(file_path, 'beamsearch')
         text_plate = plate_analysis.filter_plates(texts)
@@ -105,6 +113,9 @@ def upload_image():
 
         # Desenhar caixas nas letras detectadas
         output_image_path = draw_boxes(file_path, texts)
+
+        if output_image_path is None:
+            return jsonify({'error': 'Failed to process image'}), 500
 
         response = {
             'image_url': url_for('output_file', filename=output_image_path.split('/')[-1], _external=True),
@@ -131,4 +142,4 @@ if __name__ == '__main__':
         os.makedirs(UPLOAD_FOLDER)
     if not os.path.exists('./outputs'):
         os.makedirs('./outputs')
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5001, debug=True)

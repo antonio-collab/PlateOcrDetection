@@ -3,17 +3,11 @@
 #include <HTTPClient.h>
 #include "esp_camera.h"
 
-// Configurações da rede Wi-Fi
-const char* ssid = "Bolsolula";          
-const char* password = "verde3522";    
-
-// URL do servidor local
-const char* serverUrl = "http://192.168.0.108:5000/upload"; 
+const char* ssid = "IFMA_VISITANTE";
+const char* password = "visitante@ifma";
+const char* serverUrl = "http://10.24.8.239:5001/upload";
 
 #define CAMERA_MODEL_AI_THINKER
-
-// Definições dos pinos da câmera AI Thinker
-//Definição dos pinos
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
 #define XCLK_GPIO_NUM      0
@@ -34,18 +28,25 @@ const char* serverUrl = "http://192.168.0.108:5000/upload";
 
 void setup() {
   Serial.begin(115200);
-  
-  // Conecta ao Wi-Fi
+
   WiFi.begin(ssid, password);
   Serial.print("Conectando ao Wi-Fi");
-  while (WiFi.status() != WL_CONNECTED) {
+  int timeout = 0;
+  while (WiFi.status() != WL_CONNECTED && timeout < 20) {
     delay(500);
     Serial.print(".");
+    timeout++;
   }
-  Serial.println("\nConectado ao Wi-Fi!");
-  
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nConectado ao Wi-Fi!");
+  } else {
+    Serial.println("\nFalha ao conectar ao Wi-Fi.");
+    return;
+  }
+
   // Inicializa a câmera
-   camera_config_t config;
+  camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
   config.pin_d0 = Y2_GPIO_NUM;
@@ -66,37 +67,30 @@ void setup() {
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = FRAMESIZE_VGA;  
+  config.frame_size = FRAMESIZE_VGA;
   config.jpeg_quality = 4;
   config.fb_count = 1;
 
-  
   esp_err_t err = esp_camera_init(&config);
-
   if (err != ESP_OK) {
-     
-    Serial.printf("O início da câmera falhou com erro 0x%x", err);//Informa erro se a câmera não for iniciada corretamente
+    Serial.printf("O início da câmera falhou com erro 0x%x", err);
     delay(1000);
-    ESP.restart();//Reinicia o ESP
-     
+    ESP.restart();
   }
-}
 
-void loop() {
-  // Captura uma imagem
   camera_fb_t *fb = esp_camera_fb_get();
-  if(fb){
+  if (fb) {
     Serial.println("Foto capturada");
   } else {
     Serial.println("Erro ao capturar imagem");
-    delay(1000);
     return;
   }
 
-  // Monta a requisição multipart/form-data
   if (WiFi.status() == WL_CONNECTED) {
     WiFiClient client;
-    if (client.connect("192.168.0.108", 5000)) {
+    client.setTimeout(5000);
+
+    if (client.connect("10.24.8.239", 5001)) {
       String boundary = "----ESP32Boundary";
       String contentType = "multipart/form-data; boundary=" + boundary;
       String formDataStart = "--" + boundary + "\r\n" +
@@ -104,31 +98,25 @@ void loop() {
                              "Content-Type: image/jpeg\r\n\r\n";
       String formDataEnd = "\r\n--" + boundary + "--\r\n";
 
-      // Envia o cabeçalho HTTP
       client.print("POST /upload HTTP/1.1\r\n");
-      client.print("Host: 192.168.1.130\r\n");
+      client.print("Host: 10.24.8.239\r\n");
       client.print("Content-Type: " + contentType + "\r\n");
       client.print("Content-Length: " + String(formDataStart.length() + fb->len + formDataEnd.length()) + "\r\n");
       client.print("Connection: close\r\n\r\n");
 
-      // Envia o corpo da requisição
-      client.print(formDataStart);          // Parte inicial do form-data
-      client.write(fb->buf, fb->len);       // Bytes da imagem
-      client.print(formDataEnd);            // Parte final do form-data
+      client.print(formDataStart);
+      client.write(fb->buf, fb->len);
+      client.print(formDataEnd);
 
-      // Lê a resposta do servidor
-      while (client.connected()) {
-        String line = client.readStringUntil('\n');
-        if (line.length() == 1 && line[0] == '\r') {
+      Serial.println("Requisição enviada. Aguardando resposta...");
+
+      while (client.connected() || client.available()) {
+        if (client.available()) {
+          String response = client.readString();
+          Serial.println("Resposta HTTP:");
+          Serial.println(response);
           break;
         }
-      }
-
-      // Exibe a resposta do servidor no monitor serial
-      while (client.available()) {
-        String response = client.readString();
-        Serial.println("Resposta do servidor:");
-        Serial.println(response);
       }
 
       client.stop();
@@ -137,8 +125,11 @@ void loop() {
     }
   }
 
-  // Libera o framebuffer
-  esp_camera_fb_return(fb);
+  if (fb) {
+    esp_camera_fb_return(fb);
+  }
+}
 
-  delay(10000);  // Aguarda 10 segundos antes de capturar novamente
+void loop() {
+  // Sem operação contínua no loop
 }
